@@ -1,5 +1,5 @@
-//#define 你好，三角形
-#ifdef 你好，三角形
+//#define 变绿三角形
+#ifdef 变绿三角形
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <iostream>
@@ -12,14 +12,15 @@ const char* vertexShaderSource = "#version 330 core\n"
 "void main()\n"
 "{\n"
 "   gl_Position = vec4(aPos.x, aPos.y, aPos.z, 1.0);\n"
-"}\n";
+"}\n\0";
 
 const char* fragmentShaderSource = "#version 330 core\n"
 "out vec4 FragColor;\n"
+"uniform vec4 ourColor;\n"
 "void main()\n"
 "{\n"
-"   FragColor = vec4(1.0f, 0.5f, 0.2f, 1.0f);\n"
-"}\n";
+"   FragColor = ourColor;\n"
+"}\n\0";
 
 int main()
 {
@@ -28,7 +29,7 @@ int main()
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    
+
     // 创建窗口
     GLFWwindow* window = glfwCreateWindow(800, 600, "Learn OpenGL", NULL, NULL);
     if (window == NULL)
@@ -40,7 +41,7 @@ int main()
 
     glfwMakeContextCurrent(window);
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
-    
+
     // 绑定 opengl 函数
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
     {
@@ -55,7 +56,7 @@ int main()
     int success;
     char infoLog[512];
     glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
-    if(!success)
+    if (!success)
     {
         glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
         std::cout << "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n" << infoLog << std::endl;
@@ -94,7 +95,7 @@ int main()
     glGenVertexArrays(1, &VAO);
     glGenBuffers(1, &VBO);
     glBindVertexArray(VAO);
-    
+
     // 绑定 VBO
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
     // 指定 VBO 数据
@@ -118,7 +119,11 @@ int main()
         glClearColor(0.2, 0.2, 0.4, 1.0);
         glClear(GL_COLOR_BUFFER_BIT);
 
+        float timeValue = glfwGetTime();
+        float greenValue = sin(timeValue) * 0.5 + 0.5;
+        int vertexColorLocation = glGetUniformLocation(shaderProgram, "ourColor");
         glUseProgram(shaderProgram);
+        glUniform4f(vertexColorLocation, 0.0, greenValue, 0.0, 1.0);
         glBindVertexArray(VAO);
         glDrawArrays(GL_TRIANGLES, 0, 3);
 
@@ -135,7 +140,7 @@ int main()
     glfwTerminate();
 
     return 0;
-} 
+}
 
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height)
