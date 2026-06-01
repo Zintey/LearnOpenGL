@@ -1,4 +1,4 @@
-#define 使用封装好的Shader类
+//#define 使用封装好的Shader类
 #ifdef 使用封装好的Shader类
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
