@@ -1,16 +1,18 @@
-//#define 按键切换笑脸可见度
-#ifdef 按键切换笑脸可见度
+//#define 尝试GLM
+#ifdef 尝试GLM
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <shader.h>
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb/stb_image.h>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include <iostream>
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void processInput(GLFWwindow* window);
 void loadTexImage(const char* filename);
-
 
 
 int main()
@@ -94,12 +96,11 @@ int main()
 	glBindTexture(GL_TEXTURE_2D, 0);
 
 
-	
-	Shader ourShader("shader/vertex_texture_shader.glsl", "shader/fragment_texturemix_shader.glsl");
+
+	Shader ourShader("shader/vertex_translate_shader.glsl", "shader/fragment_texturemix_shader.glsl");
 	ourShader.use();
 	ourShader.setInt("tex1", 0);
 	ourShader.setInt("tex2", 1);
-
 
 	//glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 	float toggle = 0.0;
@@ -107,8 +108,7 @@ int main()
 	{
 		processInput(window);
 
-		
-		
+		// 改变笑脸可见度
 		if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS)
 			toggle += 0.005;
 		if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS)
@@ -119,11 +119,23 @@ int main()
 		glClearColor(0.3, 0.3, 0.3, 1.0);
 		glClear(GL_COLOR_BUFFER_BIT);
 
+		// 变换矩阵
+		glm::mat4 trans = glm::mat4(1.0f);
+		trans = glm::translate(trans, glm::vec3(1.0, 0.0, 0.0));
+		trans = glm::rotate(trans, (float)glfwGetTime(), glm::vec3(0.0f, 0.0f, 1.0f));
+		// 作业1
+		//trans = glm::rotate(trans, (float)glfwGetTime(), glm::vec3(0.0f, 0.0f, 1.0f));
+		//trans = glm::translate(trans, glm::vec3(1.0, 0.0, 0.0));
+		unsigned int transform;
+		ourShader.use();
+		transform = glGetUniformLocation(ourShader.ID, "transform");
+		glUniformMatrix4fv(transform, 1, GL_FALSE, glm::value_ptr(trans));
+
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, texture1);
 		glActiveTexture(GL_TEXTURE1);
 		glBindTexture(GL_TEXTURE_2D, texture2);
-		ourShader.use();
+		
 		glBindVertexArray(VAO);
 		glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
