@@ -1,5 +1,5 @@
-#define 两个箱子
-#ifdef 两个箱子
+//#define MVP矩阵
+#ifdef MVP矩阵
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <shader.h>
@@ -9,6 +9,9 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <iostream>
+
+const int screenWidth = 800;
+const int screenHeight = 600;
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void processInput(GLFWwindow* window);
@@ -22,7 +25,7 @@ int main()
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-	GLFWwindow* window = glfwCreateWindow(800, 600, "Learn OpenGL", NULL, NULL);
+	GLFWwindow* window = glfwCreateWindow(screenWidth, screenHeight, "Learn OpenGL", NULL, NULL);
 	if (window == NULL)
 	{
 		std::cout << "Failed to Create GLFW Window" << std::endl;
@@ -97,7 +100,7 @@ int main()
 
 
 
-	Shader ourShader("shader/vertex_translate_shader.glsl", "shader/fragment_texturemix_shader.glsl");
+	Shader ourShader("shader/vertex_mvp_shader.glsl", "shader/fragment_texturemix_shader.glsl");
 	ourShader.use();
 	ourShader.setInt("tex1", 0);
 	ourShader.setInt("tex2", 1);
@@ -119,14 +122,22 @@ int main()
 		glClearColor(0.3, 0.3, 0.3, 1.0);
 		glClear(GL_COLOR_BUFFER_BIT);
 
-		// 变换矩阵
-		glm::mat4 trans = glm::mat4(1.0f);
-		trans = glm::translate(trans, glm::vec3(0.5, 0.5, 0.0));
-		trans = glm::rotate(trans, (float)glfwGetTime(), glm::vec3(0.0f, 0.0f, 1.0f));
-		unsigned int transform;
-		ourShader.use();
-		transform = glGetUniformLocation(ourShader.ID, "transform");
-		glUniformMatrix4fv(transform, 1, GL_FALSE, glm::value_ptr(trans));
+		// mvp 变换矩阵
+		glm::mat4 model = glm::mat4(1.0f);
+		glm::mat4 view = glm::mat4(1.0f);
+		glm::mat4 projection = glm::mat4(1.0f);
+		
+		model = glm::scale(model, glm::vec3(1.0, 1.0, 1.0));
+		model = glm::rotate(model, (float)glfwGetTime(), glm::vec3(1.0, 0.0, 0.0));
+		model = glm::translate(model, glm::vec3(0.0, 0.0, 0.0));
+
+		view = glm::translate(view, glm::vec3(0.0, 0.0, -3.0));
+
+		projection = glm::perspective(glm::radians(45.f), (float)screenWidth / (float)screenHeight, 0.1f, 100.0f);
+
+		ourShader.setMatrix4("model", model);
+		ourShader.setMatrix4("view", view);
+		ourShader.setMatrix4("projection", projection);
 
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, texture1);
@@ -137,13 +148,6 @@ int main()
 		glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
 
-		// 第二个箱子
-		trans = glm::mat4(1.0f);
-		trans = glm::translate(trans, glm::vec3(-0.5, -0.5, 0.0));
-		trans = glm::scale(trans, glm::vec3(sin(glfwGetTime()) * 0.5 + 0.5, sin(glfwGetTime()) * 0.5 + 0.5, 1.0f));
-		ourShader.use();
-		glUniformMatrix4fv(transform, 1, GL_FALSE, glm::value_ptr(trans));
-		glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
 		glfwSwapBuffers(window);
 		glfwPollEvents();
