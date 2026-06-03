@@ -1,5 +1,5 @@
-//#define Blinn_Phong模型
-#ifdef Blinn_Phong模型
+#define 材质
+#ifdef 材质
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #define STB_IMAGE_IMPLEMENTATION
@@ -142,10 +142,15 @@ int main()
 		lightingShader.setMatrix4("model", toyModel);
 		lightingShader.setMatrix4("view", view);
 		lightingShader.setMatrix4("projection", projection);
-		lightingShader.setVector3("objectColor", 1.0f, 0.5f, 0.31f);
-		lightingShader.setVector3("lightColor", 1.0f, 1.0f, 1.0f);
-		lightingShader.setVector3("lightPos", lightPosition);
 		lightingShader.setVector3("cameraPos", camera.Position);
+		lightingShader.setVector3("material.ambient", 1.0f, 0.5f, 0.31f);
+		lightingShader.setVector3("material.diffuse", 1.0f, 0.5f, 0.31f);
+		lightingShader.setVector3("material.specular", 0.5f, 0.5f, 0.5f);
+		lightingShader.setFloat("material.shininess", 128.0f);
+		lightingShader.setVector3("light.ambient", 0.2f, 0.2f, 0.2f);
+		lightingShader.setVector3("light.diffuse", 0.5f, 0.5f, 0.5f);
+		lightingShader.setVector3("light.specular", 1.0f, 1.0f, 1.0f);
+		lightingShader.setVector3("light.position", lightPosition);
 
 		glBindVertexArray(toyVAO);
 		glDrawArrays(GL_TRIANGLES, 0, 36);
