@@ -1,5 +1,5 @@
-//#define 多光源
-#ifdef 多光源
+#define 导入Assimp库
+#ifdef 导入Assimp库
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #define STB_IMAGE_IMPLEMENTATION
@@ -10,6 +10,10 @@
 #include <iostream>
 #include <shader.h>
 #include <camera.h>
+#include <assimp/Importer.hpp>
+#include <assimp/scene.h>
+#include <assimp/postprocess.h>
+#include <assimp/version.h>
 
 const int screenWidth = 800;
 const int screenHeight = 600;
@@ -24,6 +28,11 @@ unsigned int loadTexture(char const* path);
 
 int main()
 {
+	Assimp::Importer importer;
+	std::cout << "Assimp 导入成功！" << std::endl;
+	std::cout << "版本: "
+		<< aiGetVersionMajor() << "."
+		<< aiGetVersionMinor() << std::endl;
 	glfwInit();
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
