@@ -1,5 +1,5 @@
-//#define 模型
-#ifdef 模型
+#define 深度测试
+#ifdef 深度测试
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #define STB_IMAGE_IMPLEMENTATION
@@ -52,8 +52,8 @@ int main()
 	}
 
 	glEnable(GL_DEPTH_TEST);
-	Shader lightingShader("shader/vertex_lighting_shader.glsl", "shader/fragment_lighting_shader.glsl");
-	Shader lightCubeShader("shader/vertex_light_cube_shader.glsl", "shader/fragment_light_cube_shader.glsl");
+	Shader lightingShader("shader/vertex_lighting_shader.glsl", "shader/fragment_depthtest_shader.glsl");
+	Shader lightCubeShader("shader/vertex_light_cube_shader.glsl", "shader/fragment_depthtest_shader.glsl");
 
 	glm::vec3 pointLightPositions[] = {
 		glm::vec3(0.7f,  0.2f,  2.0f),
