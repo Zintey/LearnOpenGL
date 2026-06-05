@@ -1,5 +1,5 @@
-//#define 深度测试
-#ifdef 深度测试
+//#define 模板测试
+#ifdef 模板测试
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #define STB_IMAGE_IMPLEMENTATION
@@ -51,9 +51,8 @@ int main()
 		return -1;
 	}
 
-	glEnable(GL_DEPTH_TEST);
-	Shader lightingShader("shader/vertex_lighting_shader.glsl", "shader/fragment_depthtest_shader.glsl");
-	Shader lightCubeShader("shader/vertex_light_cube_shader.glsl", "shader/fragment_depthtest_shader.glsl");
+	Shader lightingShader("shader/vertex_lighting_shader.glsl", "shader/fragment_lighting_shader.glsl");
+	Shader lightCubeShader("shader/vertex_light_cube_shader.glsl", "shader/fragment_light_cube_shader.glsl");
 
 	glm::vec3 pointLightPositions[] = {
 		glm::vec3(0.7f,  0.2f,  2.0f),
@@ -89,12 +88,15 @@ int main()
 	stbi_set_flip_vertically_on_load(true);
 	Model ourModel("objects/backpack/backpack.obj");
 
+	glEnable(GL_STENCIL_TEST);
+	glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+
 	while (!glfwWindowShouldClose(window))
 	{
 		processInput(window);
 
 		glClearColor(0.05f, 0.05f, 0.05f, 1.0f);
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
 		glm::mat4 view = camera.GetViewMatrix();
 		glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)screenWidth / (float)screenHeight, 0.1f, 100.0f);
@@ -135,12 +137,29 @@ int main()
 
 		glm::mat4 toyModel = glm::mat4(1.0f);
 		lightingShader.setMatrix4("model", toyModel);
+
+		// 绘制物品
+		glStencilFunc(GL_ALWAYS, 1, 0xff);
+		glStencilMask(0xff);
+		glEnable(GL_DEPTH_TEST);
 		ourModel.Draw(lightingShader);
 
 		lightCubeShader.use();
 		lightCubeShader.setMatrix4("view", view);
 		lightCubeShader.setMatrix4("projection", projection);
 
+		// 绘制轮廓
+		glStencilFunc(GL_NOTEQUAL, 1, 0xff);
+		glStencilMask(0x00);
+		glDisable(GL_DEPTH_TEST);
+		glm::mat4 outlineModel = glm::mat4(1.0f);
+		outlineModel = glm::scale(outlineModel, glm::vec3(1.02f));
+		lightCubeShader.setMatrix4("model", outlineModel);
+		ourModel.Draw(lightCubeShader);
+
+		glEnable(GL_DEPTH_TEST);
+		glStencilFunc(GL_ALWAYS, 1, 0xff);
+		glStencilMask(0xff);
 		for (int i = 0; i < 2; i++)
 		{
 			glm::mat4 lightCubeModel = glm::mat4(1.0f);
