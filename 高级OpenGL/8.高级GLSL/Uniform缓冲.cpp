@@ -91,7 +91,6 @@ int main()
 	glEnableVertexAttribArray(0);
 	glBindVertexArray(0);
 
-
 	unsigned int uBlockRed = glGetUniformBlockIndex(shaderRed.ID, "Matrices");
 	unsigned int uBlockGreen = glGetUniformBlockIndex(shaderGreen.ID, "Matrices");
 	unsigned int uBlockBlue = glGetUniformBlockIndex(shaderBlue.ID, "Matrices");
