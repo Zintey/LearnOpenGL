@@ -85,7 +85,6 @@ int main()
 			ImGui::Begin("Parameter Controller");
 
 			ImGui::SliderFloat("Normal Length", &normalLength, 0.01f, 2.0f);
-
 			ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
 			ImGui::End();
 		}
@@ -137,11 +136,15 @@ void processInput(GLFWwindow* window)
 	float deltaTime = glfwGetTime() - lastTime;
 	lastTime = glfwGetTime();
 
-	if ((glfwGetKey(window, GLFW_KEY_TAB) == GLFW_PRESS))
+	static bool key_tab_lock = false;
+	if (!key_tab_lock && (glfwGetKey(window, GLFW_KEY_TAB) == GLFW_PRESS))
 	{
+		key_tab_lock = true;
 		isShowCursor = !isShowCursor;
 		glfwSetInputMode(window, GLFW_CURSOR, isShowCursor ? GLFW_CURSOR_CAPTURED : GLFW_CURSOR_DISABLED);
 	}
+	if (glfwGetKey(window, GLFW_KEY_TAB) == GLFW_RELEASE)
+		key_tab_lock = false;
 
 	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
 		glfwSetWindowShouldClose(window, true);
@@ -171,13 +174,13 @@ void cursor_pos_callback(GLFWwindow* window, double x, double y)
 	float offsetY = y - lastY;
 	lastX = x;
 	lastY = y;
-	if (isShowCursor) return;
+	if (isShowCursor && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_1) != GLFW_PRESS) return;
 	camera.ProcessMouseMovement(offsetX, -offsetY);
 }
 
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
 {
-	if (isShowCursor) return;
+	if (isShowCursor && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_1) != GLFW_PRESS) return;
 	camera.ProcessMouseScroll(yoffset);
 }
 
