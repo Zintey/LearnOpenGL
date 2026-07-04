@@ -54,6 +54,7 @@ int main()
 	stbi_set_flip_vertically_on_load(true);
 	Model itemModel("objects/backpack/backpack.obj");
 	//Model itemModel("objects/nanosuit_reflection/nanosuit.obj");
+	
 
 	Shader modelShader("shader/vertex_common_shader.glsl", "shader/fragment_common_shader.glsl");
 	Shader normalShader("shader/vertex_向量可视化.glsl", "shader/fragment_向量可视化.glsl", "shader/geometry_向量可视化.glsl");
