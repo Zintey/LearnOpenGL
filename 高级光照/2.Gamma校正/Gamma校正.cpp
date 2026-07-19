@@ -1,4 +1,4 @@
-#define Gamma校正
+//#define Gamma校正
 #ifdef Gamma校正
 
 #include <glad/glad.h>
