@@ -1,5 +1,14 @@
-//#define FORWARD_SHADING
-#ifdef FORWARD_SHADING
+/*
+解决了 延迟光照处理阶段.cpp 中存在一个问题：
+    在处理gbuffer时写入了lightcube数据
+    在后面的lighting阶段，lightcube对应的像素也会参与光照计算
+    而且gPosition，gNormal等数据不对应
+
+通过结合前向渲染lightcube解决这个问题，
+具体为，把gbuffer中的深度信息给前向渲染的帧缓存，然后正向渲染light cube
+*/
+//#define COMBINE_DEFERRED_RENDERING_WITH_FORWARD_RENDERING
+#ifdef COMBINE_DEFERRED_RENDERING_WITH_FORWARD_RENDERING
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -70,16 +79,17 @@ int main()
     ImGui::StyleColorsDark();
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 330");
-
     // Load Model
     stbi_set_flip_vertically_on_load(true);
     Model itemModel("objects/nanosuit_reflection/nanosuit.obj");
 
-
     // Shader
-    Shader lightingShader("shader/forward_lighting.vert", "shader/forward_lighting.frag");
+    Shader GBufferShader("shader/get_Gbuffer.vert", "shader/get_Gbuffer.frag");
+    Shader deferredShader("shader/deferred.vert", "shader/deferred.frag");
     Shader lightCubeShader("shader/vertex_light_cube_shader.glsl", "shader/fragment_light_cube_shader.glsl");
 
+
+    // Spawn Model modelmatrix Data
     srand(time(0));
     constexpr int ITEM_CNT = 1000;
     constexpr float ITEM_SPAWN_X_RANGE = 50;
@@ -98,6 +108,8 @@ int main()
     }
     itemModel.SetInstancedData(itemModelMatrixs, ITEM_CNT);
 
+
+    // Spawn Light Cube Data
     constexpr int LIGHT_CNT = 100;
     constexpr float LIGHT_SPAWN_X_RANGE = 50;
     constexpr float LIGHT_SPAWN_Y_RANGE_UP = 4;
@@ -129,10 +141,54 @@ int main()
         light[i].specular = color * glm::float32(1.0f);
     }
 
-    int enable_light_cnt = 10;
+    unsigned int gBuffer;
+    glGenFramebuffers(1, &gBuffer);
+    glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
+    unsigned int gPosition, gNormal, gAlbedoSpec;
+    glGenTextures(1, &gPosition);
+    glBindTexture(GL_TEXTURE_2D, gPosition);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, screenWidth, screenHeight, 0, GL_RGB, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, gPosition, 0);
 
+    glGenTextures(1, &gNormal);
+    glBindTexture(GL_TEXTURE_2D, gNormal);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, screenWidth, screenHeight, 0, GL_RGB, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, gNormal, 0);
+
+    glGenTextures(1, &gAlbedoSpec);
+    glBindTexture(GL_TEXTURE_2D, gAlbedoSpec);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, screenWidth, screenHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, gAlbedoSpec, 0);
+
+    unsigned int attachments[3] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
+    glDrawBuffers(3, attachments);
+
+    unsigned int rboDepth;
+    glGenRenderbuffers(1, &rboDepth);
+    glBindRenderbuffer(GL_RENDERBUFFER, rboDepth);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, screenWidth, screenHeight);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rboDepth);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        std::cout << "Framebuffer not complete!" << std::endl;
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    deferredShader.use();
+    deferredShader.setInt("gPosition", 0);
+    deferredShader.setInt("gNormal", 1);
+    deferredShader.setInt("gAlbedoSpec", 2);
+
+    int enable_light_cnt = 10;
+    int show_mode = 0;
     camera.MovementSpeed = 10.0;
-    glEnable(GL_DEPTH_TEST);
+
     while (!glfwWindowShouldClose(window))
     {
         // Process input
@@ -153,48 +209,72 @@ int main()
                 ImGui::DragFloat("speed", &camera.MovementSpeed, 0.01f);
                 ImGui::TreePop();
             }
+            const char* modes[] = { "lighting", "position", "normal", "abedo", "spec" };
+            if (ImGui::Combo("show mode", &show_mode, modes, IM_ARRAYSIZE(modes))) {
+                ImGui::Text("mode: %s", modes[show_mode]);
+            }
+
             ImGui::SliderInt("enable_light_cnt", &enable_light_cnt, 1, LIGHT_CNT);
             ImGui::End();
         }
 
-
-        glClearColor(0., 0., 0., 1.0);
+        // render GBuffer
+        glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
+        glEnable(GL_DEPTH_TEST);
+        glClearColor(0.f, 0.f, 0.f, 1.0);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         glm::mat4 view = camera.GetViewMatrix();
         glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)screenWidth / (float)screenHeight, 0.1f, 100.0f);
-        lightingShader.use();
-        lightingShader.setInt("enable_light_cnt", enable_light_cnt);
-        lightingShader.setMatrix4("view", view);
-        lightingShader.setMatrix4("projection", projection);
-        lightingShader.setVector3("cameraPos", camera.Position);
+        GBufferShader.use();
+        GBufferShader.setMatrix4("view", view);
+        GBufferShader.setMatrix4("projection", projection);
+        itemModel.DrawInstanced(GBufferShader, ITEM_CNT);
 
+        // deferred lighting (render quad)
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glClearColor(0.f, 0.f, 0.f, 1.0);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, gPosition);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, gNormal);
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, gAlbedoSpec);
+        deferredShader.use();
+        deferredShader.setInt("show_mode", show_mode);
+        deferredShader.setVector3("cameraPos", camera.Position);
+        deferredShader.setInt("enable_light_cnt", enable_light_cnt);
         for (int i = 0; i < enable_light_cnt; i++)
         {
             std::string name = "light[" + std::to_string(i) + "].";
-            lightingShader.setVector3(name + "position", light[i].position);
-            lightingShader.setVector3(name + "ambient", light[i].ambient);
-            lightingShader.setVector3(name + "diffuse", light[i].diffuse);
-            lightingShader.setVector3(name + "specular", light[i].specular);
-            lightingShader.setFloat(name + "constant", light[i].constant);
-            lightingShader.setFloat(name + "linear", light[i].linear);
-            lightingShader.setFloat(name + "quadratic", light[i].quadratic);
+            deferredShader.setVector3(name + "position", light[i].position);
+            deferredShader.setVector3(name + "ambient", light[i].ambient);
+            deferredShader.setVector3(name + "diffuse", light[i].diffuse);
+            deferredShader.setVector3(name + "specular", light[i].specular);
+            deferredShader.setFloat(name + "constant", light[i].constant);
+            deferredShader.setFloat(name + "linear", light[i].linear);
+            deferredShader.setFloat(name + "quadratic", light[i].quadratic);
         }
+        renderQuad();
 
-        itemModel.DrawInstanced(lightingShader, ITEM_CNT);
-
-        //lightCubeShader.use();
-        //lightCubeShader.setMatrix4("view", view);
-        //lightCubeShader.setMatrix4("projection", projection);
-        //for (int i = 0; i < LIGHT_CNT; i++)
-        //{
-        //    glm::mat4 model = glm::mat4(1.0f);
-        //    model = glm::translate(model, light[i].position);
-        //    model = glm::scale(model, glm::vec3(0.1f));
-        //    lightCubeShader.setMatrix4("model", model);
-        //    lightCubeShader.setVector3("lightColor", light[i].diffuse);
-        //    renderCube();
-        //}
+        // forward rendering light cube
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, gBuffer);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+        glBlitFramebuffer(0, 0, screenWidth, screenHeight, 0, 0, screenWidth, screenHeight, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        lightCubeShader.use();
+        lightCubeShader.setMatrix4("view", view);
+        lightCubeShader.setMatrix4("projection", projection);
+        for (int i = 0; i < LIGHT_CNT; i++)
+        {
+            glm::mat4 model = glm::mat4(1.0f);
+            model = glm::translate(model, light[i].position);
+            model = glm::scale(model, glm::vec3(0.1f));
+            lightCubeShader.setMatrix4("model", model);
+            lightCubeShader.setVector3("lightColor", light[i].diffuse);
+            renderCube();
+        }
 
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());

@@ -7,8 +7,8 @@
     在后面的lighting阶段，lightcube对应的像素也会参与光照计算
     而且gPosition，gNormal等数据不对应
 */
-//#define 延迟光照处理阶段
-#ifdef 延迟光照处理阶段
+//#define DEFERRED_SHADING_STAGE
+#ifdef DEFERRED_SHADING_STAGE
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -230,18 +230,18 @@ int main()
             GBufferShader.setMatrix4("projection", projection);
             itemModel.DrawInstanced(GBufferShader, ITEM_CNT);
 
-            lightCubeShader.use();
-            lightCubeShader.setMatrix4("view", view);
-            lightCubeShader.setMatrix4("projection", projection);
-            for (int i = 0; i < LIGHT_CNT; i++)
-            {
-                glm::mat4 model = glm::mat4(1.0f);
-                model = glm::translate(model, light[i].position);
-                model = glm::scale(model, glm::vec3(0.1f));
-                lightCubeShader.setMatrix4("model", model);
-                lightCubeShader.setVector3("lightColor", light[i].diffuse);
-                renderCube();
-            }
+            //lightCubeShader.use();
+            //lightCubeShader.setMatrix4("view", view);
+            //lightCubeShader.setMatrix4("projection", projection);
+            //for (int i = 0; i < LIGHT_CNT; i++)
+            //{
+            //    glm::mat4 model = glm::mat4(1.0f);
+            //    model = glm::translate(model, light[i].position);
+            //    model = glm::scale(model, glm::vec3(0.1f));
+            //    lightCubeShader.setMatrix4("model", model);
+            //    lightCubeShader.setVector3("lightColor", light[i].diffuse);
+            //    renderCube();
+            //}
 
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
             glDisable(GL_DEPTH_TEST);

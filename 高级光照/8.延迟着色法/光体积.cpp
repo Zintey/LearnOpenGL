@@ -1,5 +1,16 @@
-//#define FORWARD_SHADING
-#ifdef FORWARD_SHADING
+/*
+使用真正的光体积
+前向渲染：1000的模型（每个约6000个面），100个灯光下帧率为25左右
+延迟渲染：1000的模型（每个约6000个面），100个灯光下帧率为75左右
+延迟渲染+光体积(半径为10)：1000的模型（每个约6000个面），
+    100个灯光下帧率为94左右
+    500个灯光下帧率为65左右
+    1000个灯光下帧率为45左右
+    2000个灯光下帧率为30左右
+    3000个灯光下帧率为22左右
+*/
+//#define LIGHT_VOLUME
+#ifdef LIGHT_VOLUME
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -35,6 +46,7 @@ void loadTexImage(const char* filename);
 
 void renderCube();
 void renderQuad();
+void renderSphere();
 
 int main()
 {
@@ -70,16 +82,17 @@ int main()
     ImGui::StyleColorsDark();
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 330");
-
     // Load Model
     stbi_set_flip_vertically_on_load(true);
     Model itemModel("objects/nanosuit_reflection/nanosuit.obj");
 
-
     // Shader
-    Shader lightingShader("shader/forward_lighting.vert", "shader/forward_lighting.frag");
+    Shader GBufferShader("shader/get_Gbuffer.vert", "shader/get_Gbuffer.frag");
+    //Shader deferredShader("shader/deferred.vert", "shader/deferred.frag");
     Shader lightCubeShader("shader/vertex_light_cube_shader.glsl", "shader/fragment_light_cube_shader.glsl");
+    Shader lightVolumeShader("shader/lightVolume.vert", "shader/lightVolume.frag");
 
+    // Spawn Model modelmatrix Data
     srand(time(0));
     constexpr int ITEM_CNT = 1000;
     constexpr float ITEM_SPAWN_X_RANGE = 50;
@@ -98,7 +111,9 @@ int main()
     }
     itemModel.SetInstancedData(itemModelMatrixs, ITEM_CNT);
 
-    constexpr int LIGHT_CNT = 100;
+
+    // Spawn Light Cube Data
+    constexpr int LIGHT_CNT = 3000;
     constexpr float LIGHT_SPAWN_X_RANGE = 50;
     constexpr float LIGHT_SPAWN_Y_RANGE_UP = 4;
     constexpr float LIGHT_SPAWN_Y_RANGE_DOWN = 0;
@@ -111,6 +126,7 @@ int main()
         float constant = 1.0f;
         float linear = 0.05f;
         float quadratic = 0.032f;
+        float radius;
     };
     PointLight light[LIGHT_CNT];
     for (int i = 0; i < LIGHT_CNT; i++)
@@ -127,12 +143,65 @@ int main()
         light[i].ambient = color * glm::float32(0.01f);
         light[i].diffuse = color * glm::float32(0.8f);
         light[i].specular = color * glm::float32(1.0f);
+
+        GLfloat lightMax = std::fmaxf(std::fmaxf(color.r, color.g), color.b);
+        light[i].radius = (-light[i].linear + 
+            std::sqrtf(light[i].linear * light[i].linear - 4 * light[i].quadratic 
+            * (light[i].constant - (256.0 / 5.0) * lightMax)))
+            / (2 * light[i].quadratic);
     }
 
-    int enable_light_cnt = 10;
+    unsigned int gBuffer;
+    glGenFramebuffers(1, &gBuffer);
+    glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
+    unsigned int gPosition, gNormal, gAlbedoSpec;
+    glGenTextures(1, &gPosition);
+    glBindTexture(GL_TEXTURE_2D, gPosition);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, screenWidth, screenHeight, 0, GL_RGB, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, gPosition, 0);
 
+    glGenTextures(1, &gNormal);
+    glBindTexture(GL_TEXTURE_2D, gNormal);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, screenWidth, screenHeight, 0, GL_RGB, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, gNormal, 0);
+
+    glGenTextures(1, &gAlbedoSpec);
+    glBindTexture(GL_TEXTURE_2D, gAlbedoSpec);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, screenWidth, screenHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, gAlbedoSpec, 0);
+
+    unsigned int attachments[3] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
+    glDrawBuffers(3, attachments);
+
+    unsigned int rboDepth;
+    glGenRenderbuffers(1, &rboDepth);
+    glBindRenderbuffer(GL_RENDERBUFFER, rboDepth);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, screenWidth, screenHeight);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rboDepth);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        std::cout << "Framebuffer not complete!" << std::endl;
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    lightVolumeShader.use();
+    lightVolumeShader.setInt("gPosition", 0);
+    lightVolumeShader.setInt("gNormal", 1);
+    lightVolumeShader.setInt("gAlbedoSpec", 2);
+
+    int enable_light_cnt = 10;
+    int show_mode = 0;
+    float lightRadius = 10.0f;
+    bool show_light_sphere = true;
     camera.MovementSpeed = 10.0;
-    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
     while (!glfwWindowShouldClose(window))
     {
         // Process input
@@ -153,48 +222,98 @@ int main()
                 ImGui::DragFloat("speed", &camera.MovementSpeed, 0.01f);
                 ImGui::TreePop();
             }
+            const char* modes[] = { "lighting", "position", "normal", "abedo", "spec" };
+            if (ImGui::Combo("show mode", &show_mode, modes, IM_ARRAYSIZE(modes))) {
+                ImGui::Text("mode: %s", modes[show_mode]);
+            }
             ImGui::SliderInt("enable_light_cnt", &enable_light_cnt, 1, LIGHT_CNT);
+            ImGui::SliderFloat("light radius", &lightRadius, 0, 30);
+            ImGui::Checkbox("show light sphere", &show_light_sphere);
             ImGui::End();
         }
 
-
-        glClearColor(0., 0., 0., 1.0);
+        // render GBuffer
+        glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
+        glEnable(GL_DEPTH_TEST);
+        glClearColor(0.f, 0.f, 0.f, 1.0);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         glm::mat4 view = camera.GetViewMatrix();
         glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)screenWidth / (float)screenHeight, 0.1f, 100.0f);
-        lightingShader.use();
-        lightingShader.setInt("enable_light_cnt", enable_light_cnt);
-        lightingShader.setMatrix4("view", view);
-        lightingShader.setMatrix4("projection", projection);
-        lightingShader.setVector3("cameraPos", camera.Position);
+        GBufferShader.use();
+        GBufferShader.setMatrix4("view", view);
+        GBufferShader.setMatrix4("projection", projection);
+        itemModel.DrawInstanced(GBufferShader, ITEM_CNT);
 
+        // deferred lighting with light volume (render light sphere)
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glClearColor(0.f, 0.f, 0.f, 1.0);
+        glClear(GL_COLOR_BUFFER_BIT);
+        glDisable(GL_DEPTH_TEST);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_ONE, GL_ONE);
+        glCullFace(GL_FRONT);
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, gPosition);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, gNormal);
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, gAlbedoSpec);
+        lightVolumeShader.use();
+        lightVolumeShader.setMatrix4("view", view);
+        lightVolumeShader.setMatrix4("projection", projection);
+        lightVolumeShader.setInt("show_mode", show_mode);
+        lightVolumeShader.setVector3("cameraPos", camera.Position);
+        lightVolumeShader.setVector2("screen_size", (float)screenWidth, (float)screenHeight);
         for (int i = 0; i < enable_light_cnt; i++)
         {
-            std::string name = "light[" + std::to_string(i) + "].";
-            lightingShader.setVector3(name + "position", light[i].position);
-            lightingShader.setVector3(name + "ambient", light[i].ambient);
-            lightingShader.setVector3(name + "diffuse", light[i].diffuse);
-            lightingShader.setVector3(name + "specular", light[i].specular);
-            lightingShader.setFloat(name + "constant", light[i].constant);
-            lightingShader.setFloat(name + "linear", light[i].linear);
-            lightingShader.setFloat(name + "quadratic", light[i].quadratic);
+            std::string name = "light.";
+            lightVolumeShader.setVector3(name + "position", light[i].position);
+            lightVolumeShader.setVector3(name + "ambient", light[i].ambient);
+            lightVolumeShader.setVector3(name + "diffuse", light[i].diffuse);
+            lightVolumeShader.setVector3(name + "specular", light[i].specular);
+            lightVolumeShader.setFloat(name + "constant", light[i].constant);
+            lightVolumeShader.setFloat(name + "linear", light[i].linear);
+            lightVolumeShader.setFloat(name + "quadratic", light[i].quadratic);
+
+            glm::mat4 model = glm::mat4(1.0f);
+            model = glm::translate(model, light[i].position);
+            model = glm::scale(model, glm::vec3(lightRadius));
+            lightVolumeShader.setMatrix4("model", model);
+            renderSphere();
         }
+        glEnable(GL_DEPTH_TEST);
+        glDisable(GL_BLEND);
+        glCullFace(GL_BACK);
 
-        itemModel.DrawInstanced(lightingShader, ITEM_CNT);
-
-        //lightCubeShader.use();
-        //lightCubeShader.setMatrix4("view", view);
-        //lightCubeShader.setMatrix4("projection", projection);
-        //for (int i = 0; i < LIGHT_CNT; i++)
-        //{
-        //    glm::mat4 model = glm::mat4(1.0f);
-        //    model = glm::translate(model, light[i].position);
-        //    model = glm::scale(model, glm::vec3(0.1f));
-        //    lightCubeShader.setMatrix4("model", model);
-        //    lightCubeShader.setVector3("lightColor", light[i].diffuse);
-        //    renderCube();
-        //}
+        // forward rendering light cube
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, gBuffer);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+        glBlitFramebuffer(0, 0, screenWidth, screenHeight, 0, 0, screenWidth, screenHeight, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        lightCubeShader.use();
+        lightCubeShader.setMatrix4("view", view);
+        lightCubeShader.setMatrix4("projection", projection);
+        for (int i = 0; i < enable_light_cnt; i++)
+        {
+            glm::mat4 model = glm::mat4(1.0f);
+            model = glm::translate(model, light[i].position);
+            model = glm::scale(model, glm::vec3(0.1f));
+            lightCubeShader.setMatrix4("model", model);
+            lightCubeShader.setVector3("lightColor", light[i].diffuse);
+            renderCube();
+            if (show_light_sphere)
+            {
+                glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+                model = glm::mat4(1.0f);
+                model = glm::translate(model, light[i].position);
+                model = glm::scale(model, glm::vec3(lightRadius));
+                lightCubeShader.setMatrix4("model", model);
+                renderSphere();
+                glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+            }
+        }
 
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -319,6 +438,130 @@ void renderQuad()
 
     glBindVertexArray(VAO);
     glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+}
+
+unsigned int sphereVAO = 0;
+unsigned int sphereVBO = 0;
+unsigned int sphereEBO = 0;
+unsigned int sphereIndexCount = 0;
+void renderSphere()
+{
+    if (sphereVAO == 0)
+    {
+        std::vector<float> vertices;
+        std::vector<unsigned int> indices;
+        const unsigned int X_SEGMENTS = 32;
+        const unsigned int Y_SEGMENTS = 16;
+        const float PI = 3.14159265359f;
+
+        /*
+            生成球顶点
+            theta: 0 ~ PI
+            phi: 0 ~ 2PI
+
+        */
+        for (unsigned int y = 0; y <= Y_SEGMENTS; y++)
+        {
+            for (unsigned int x = 0; x <= X_SEGMENTS; x++)
+            {
+
+                float xSegment = (float)x / (float)X_SEGMENTS;
+                float ySegment = (float)y / (float)Y_SEGMENTS;
+
+
+                float xPos = cos(xSegment * 2.0f * PI) * sin(ySegment * PI);
+                float yPos = cos(ySegment * PI);
+                float zPos = sin(xSegment * 2.0f * PI) * sin(ySegment * PI);
+
+                // position
+                vertices.push_back(xPos);
+                vertices.push_back(yPos);
+                vertices.push_back(zPos);
+                // normal
+                vertices.push_back(xPos);
+                vertices.push_back(yPos);
+                vertices.push_back(zPos);
+                // uv
+                vertices.push_back(xSegment);
+                vertices.push_back(ySegment);
+            }
+        }
+
+
+
+        /*
+            生成索引
+
+            每个四边形拆成两个三角形
+
+             A------B
+             |    / |
+             |  /   |
+             C------D
+
+             A,C,B
+             B,C,D
+
+        */
+        for (unsigned int y = 0; y < Y_SEGMENTS; y++)
+        {
+            for (unsigned int x = 0; x < X_SEGMENTS; x++)
+            {
+
+                unsigned int a = y * (X_SEGMENTS + 1) + x;
+                unsigned int b = (y + 1) * (X_SEGMENTS + 1) + x;
+                unsigned int c = (y + 1) * (X_SEGMENTS + 1) + x + 1;
+                unsigned int d = y * (X_SEGMENTS + 1) + x + 1;
+                indices.push_back(a);
+                indices.push_back(d);
+                indices.push_back(b);
+
+                indices.push_back(d);
+                indices.push_back(c);
+                indices.push_back(b);
+            }
+        }
+        sphereIndexCount = indices.size();
+        // VAO
+        glGenVertexArrays(1, &sphereVAO);
+        glBindVertexArray(sphereVAO);
+        // VBO
+        glGenBuffers(1, &sphereVBO);
+        glBindBuffer(GL_ARRAY_BUFFER, sphereVBO);
+        glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), &vertices[0], GL_STATIC_DRAW);
+        // EBO
+        glGenBuffers(1, &sphereEBO);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, sphereEBO);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), &indices[0], GL_STATIC_DRAW);
+
+        glEnableVertexAttribArray(0);
+
+        /*
+            vertex layout:
+
+            position:
+            0 1 2
+
+            normal:
+            3 4 5
+
+            uv:
+            6 7
+        */
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray(1);
+        
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
+        glEnableVertexAttribArray(2);
+
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
+        glBindVertexArray(0);
+    }
+    // draw sphere
+    glBindVertexArray(sphereVAO);
+
+    glDrawElements(GL_TRIANGLES, sphereIndexCount,  GL_UNSIGNED_INT, 0);
     glBindVertexArray(0);
 }
 
